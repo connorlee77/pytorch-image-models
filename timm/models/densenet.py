@@ -4,7 +4,6 @@ fixed kwargs passthrough and addition of dynamic global avg/max pool.
 """
 import re
 from collections import OrderedDict
-from functools import partial
 
 import torch
 import torch.nn as nn
@@ -13,9 +12,10 @@ import torch.utils.checkpoint as cp
 from torch.jit.annotations import List
 
 from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
-from .helpers import build_model_with_cfg, MATCH_PREV_GROUP
-from .layers import BatchNormAct2d, create_norm_act_layer, BlurPool2d, create_classifier
-from .registry import register_model
+from timm.layers import BatchNormAct2d, create_norm_act_layer, BlurPool2d, create_classifier
+from ._builder import build_model_with_cfg
+from ._manipulate import MATCH_PREV_GROUP
+from ._registry import register_model
 
 __all__ = ['DenseNet']
 
@@ -115,7 +115,7 @@ class DenseBlock(nn.ModuleDict):
     _version = 2
 
     def __init__(
-            self, num_layers, num_input_features, bn_size, growth_rate, norm_layer=nn.ReLU,
+            self, num_layers, num_input_features, bn_size, growth_rate, norm_layer=BatchNormAct2d,
             drop_rate=0., memory_efficient=False):
         super(DenseBlock, self).__init__()
         for i in range(num_layers):
@@ -138,7 +138,7 @@ class DenseBlock(nn.ModuleDict):
 
 
 class DenseTransition(nn.Sequential):
-    def __init__(self, num_input_features, num_output_features, norm_layer=nn.BatchNorm2d, aa_layer=None):
+    def __init__(self, num_input_features, num_output_features, norm_layer=BatchNormAct2d, aa_layer=None):
         super(DenseTransition, self).__init__()
         self.add_module('norm', norm_layer(num_input_features))
         self.add_module('conv', nn.Conv2d(
