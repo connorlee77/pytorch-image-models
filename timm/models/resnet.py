@@ -330,14 +330,14 @@ class BasicBlock(nn.Module):
 
         self.conv1 = nn.Conv2d(
             inplanes, first_planes, kernel_size=3, stride=1 if use_aa else stride, padding=first_dilation,
-            dilation=first_dilation, bias=False)
+            dilation=first_dilation, bias=False, padding_mode='reflect')
         self.bn1 = norm_layer(first_planes)
         self.drop_block = drop_block() if drop_block is not None else nn.Identity()
         self.act1 = act_layer(inplace=True)
         self.aa = create_aa(aa_layer, channels=first_planes, stride=stride, enable=use_aa)
 
         self.conv2 = nn.Conv2d(
-            first_planes, outplanes, kernel_size=3, padding=dilation, dilation=dilation, bias=False)
+            first_planes, outplanes, kernel_size=3, padding=dilation, dilation=dilation, bias=False, padding_mode='reflect')
         self.bn2 = norm_layer(outplanes)
 
         self.se = create_attn(attn_layer, outplanes)
@@ -353,7 +353,6 @@ class BasicBlock(nn.Module):
 
     def forward(self, x):
         shortcut = x
-
         x = self.conv1(x)
         x = self.bn1(x)
         x = self.drop_block(x)
@@ -392,19 +391,19 @@ class Bottleneck(nn.Module):
         first_dilation = first_dilation or dilation
         use_aa = aa_layer is not None and (stride == 2 or first_dilation != dilation)
 
-        self.conv1 = nn.Conv2d(inplanes, first_planes, kernel_size=1, bias=False)
+        self.conv1 = nn.Conv2d(inplanes, first_planes, kernel_size=1, bias=False, padding_mode='reflect')
         self.bn1 = norm_layer(first_planes)
         self.act1 = act_layer(inplace=True)
 
         self.conv2 = nn.Conv2d(
             first_planes, width, kernel_size=3, stride=1 if use_aa else stride,
-            padding=first_dilation, dilation=first_dilation, groups=cardinality, bias=False)
+            padding=first_dilation, dilation=first_dilation, groups=cardinality, bias=False, padding_mode='reflect')
         self.bn2 = norm_layer(width)
         self.drop_block = drop_block() if drop_block is not None else nn.Identity()
         self.act2 = act_layer(inplace=True)
         self.aa = create_aa(aa_layer, channels=width, stride=stride, enable=use_aa)
 
-        self.conv3 = nn.Conv2d(width, outplanes, kernel_size=1, bias=False)
+        self.conv3 = nn.Conv2d(width, outplanes, kernel_size=1, bias=False, padding_mode='reflect')
         self.bn3 = norm_layer(outplanes)
 
         self.se = create_attn(attn_layer, outplanes)
@@ -457,7 +456,7 @@ def downsample_conv(
 
     return nn.Sequential(*[
         nn.Conv2d(
-            in_channels, out_channels, kernel_size, stride=stride, padding=p, dilation=first_dilation, bias=False),
+            in_channels, out_channels, kernel_size, stride=stride, padding=p, dilation=first_dilation, bias=False, padding_mode='reflect'),
         norm_layer(out_channels)
     ])
 
@@ -474,7 +473,7 @@ def downsample_avg(
 
     return nn.Sequential(*[
         pool,
-        nn.Conv2d(in_channels, out_channels, 1, stride=1, padding=0, bias=False),
+        nn.Conv2d(in_channels, out_channels, 1, stride=1, padding=0, bias=False, padding_mode='reflect'),
         norm_layer(out_channels)
     ])
 
@@ -523,6 +522,9 @@ def make_blocks(
             prev_dilation = dilation
             inplanes = planes * block_fn.expansion
             net_block_idx += 1
+
+            # if block_idx == num_blocks - 1:
+            #     blocks[-1].act2 = nn.Sigmoid()
 
         stages.append((stage_name, nn.Sequential(*blocks)))
         feature_info.append(dict(num_chs=inplanes, reduction=net_stride, module=stage_name))
@@ -607,15 +609,15 @@ class ResNet(nn.Module):
             if 'tiered' in stem_type:
                 stem_chs = (3 * (stem_width // 4), stem_width)
             self.conv1 = nn.Sequential(*[
-                nn.Conv2d(in_chans, stem_chs[0], 3, stride=2, padding=1, bias=False),
+                nn.Conv2d(in_chans, stem_chs[0], 3, stride=2, padding=1, bias=False, padding_mode='reflect'),
                 norm_layer(stem_chs[0]),
                 act_layer(inplace=True),
-                nn.Conv2d(stem_chs[0], stem_chs[1], 3, stride=1, padding=1, bias=False),
+                nn.Conv2d(stem_chs[0], stem_chs[1], 3, stride=1, padding=1, bias=False, padding_mode='reflect'),
                 norm_layer(stem_chs[1]),
                 act_layer(inplace=True),
-                nn.Conv2d(stem_chs[1], inplanes, 3, stride=1, padding=1, bias=False)])
+                nn.Conv2d(stem_chs[1], inplanes, 3, stride=1, padding=1, bias=False, padding_mode='reflect')])
         else:
-            self.conv1 = nn.Conv2d(in_chans, inplanes, kernel_size=7, stride=2, padding=3, bias=False)
+            self.conv1 = nn.Conv2d(in_chans, inplanes, kernel_size=7, stride=2, padding=3, bias=False, padding_mode='reflect')
         self.bn1 = norm_layer(inplanes)
         self.act1 = act_layer(inplace=True)
         self.feature_info = [dict(num_chs=inplanes, reduction=2, module='act1')]
@@ -623,7 +625,7 @@ class ResNet(nn.Module):
         # Stem pooling. The name 'maxpool' remains for weight compatibility.
         if replace_stem_pool:
             self.maxpool = nn.Sequential(*filter(None, [
-                nn.Conv2d(inplanes, inplanes, 3, stride=1 if aa_layer else 2, padding=1, bias=False),
+                nn.Conv2d(inplanes, inplanes, 3, stride=1 if aa_layer else 2, padding=1, bias=False, padding_mode='reflect'),
                 create_aa(aa_layer, channels=inplanes, stride=2) if aa_layer is not None else None,
                 norm_layer(inplanes),
                 act_layer(inplace=True)
